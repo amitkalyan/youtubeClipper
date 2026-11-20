@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from app.errors import CancelledError
+from app.errors import CancelledError, OllamaError
 from app.services import clip_validation_service, ollama_service
 
 logger = logging.getLogger("clipper.highlights")
@@ -24,6 +24,9 @@ def find_clips(
     if not clip_validation_service.has_short_window(sentences):
         on_progress(1.0, "The spoken audio is under 20 seconds, so there is no other speech to add.")
         return []
+    if chat is None and not _ollama_ready():
+        logger.info("Ollama is off. Joining speech without a model.")
+        return _joined_clips(sentences, on_progress, offline=True)
     chunks = chunk_lines(_lines(sentences))
     caller = chat or ollama_service.chat
     raw: list[dict] = []
@@ -36,29 +39,49 @@ def find_clips(
                 f"Scoring transcript part {index + 1} of {len(chunks)}.",
             )
             last = index == len(chunks) - 1
-            text = caller(
-                _prompt(chunk),
-                should_cancel=should_cancel,
-                keep_alive=0 if last else "10m",
-            )
+            try:
+                text = caller(
+                    _prompt(chunk),
+                    should_cancel=should_cancel,
+                    keep_alive=0 if last else "10m",
+                )
+            except OllamaError as exc:
+                logger.warning("Ollama scoring stopped: %s", exc)
+                break
             raw.extend(ollama_service.parse_clip_response(text))
     finally:
         if chat is None:
             ollama_service.unload()
-    clips = clip_validation_service.validate_candidates(sentences, raw)
+    clips = clip_validation_service.validate_candidates(sentences, raw) if raw else []
     if clips:
         logger.info("Highlight candidates kept=%s suggested=%s", len(clips), len(raw))
         on_progress(1.0, f"{len(clips)} clip candidate{'s' if len(clips) != 1 else ''}.")
         return clips
+    return _joined_clips(sentences, on_progress, offline=False)
+
+
+def _ollama_ready() -> bool:
+    installed = ollama_service.installed_models()
+    return bool(installed)
+
+
+def _joined_clips(
+    sentences: list[dict],
+    on_progress: Callable[[float, str], None],
+    *,
+    offline: bool,
+) -> list[dict]:
     clips = clip_validation_service.combine_sentences(sentences)
-    logger.info("Joined neighboring sentences clips=%s suggested=%s", len(clips), len(raw))
-    if clips:
-        on_progress(
-            1.0,
-            f"Joined neighboring sentences into {len(clips)} short{'s' if len(clips) != 1 else ''}.",
-        )
-    else:
+    logger.info("Joined neighboring sentences clips=%s offline=%s", len(clips), offline)
+    if not clips:
         on_progress(1.0, "The spoken audio is under 20 seconds, so there is no other speech to add.")
+        return []
+    count = f"{len(clips)} short{'s' if len(clips) != 1 else ''}"
+    if offline:
+        message = f"Ollama is off. Joined speech into {count}."
+    else:
+        message = f"Joined neighboring sentences into {count}."
+    on_progress(1.0, message)
     return clips
 
 

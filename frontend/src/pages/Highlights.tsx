@@ -98,10 +98,10 @@ export function Highlights() {
     <div>
       <h1 className="text-3xl font-semibold tracking-tight">Highlight detection</h1>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">
-        Ollama reads the saved transcript and proposes moments from 20 seconds to 1 minute of speech. Each quote
-        is copied from the sentences that were actually spoken. Speech under 20 seconds is joined with other speech
-        already in this transcript. A pause longer than 2 seconds is left out. Picture quality stays at 3 until a
-        preview measures a real frame, and can then rise to 5.
+        When Ollama is running, it proposes moments from 20 seconds to 1 minute of speech. Each quote is copied
+        from the sentences that were actually spoken. If Ollama is off, the same transcript is still cut into shorts
+        by joining speech. A pause longer than 2 seconds is left out. Picture quality stays at 3 until a preview
+        measures a real frame, and can then rise to 5.
       </p>
       {health ? <p className="mt-3 text-sm text-zinc-300">Ollama: {health.ollama.note}</p> : null}
       {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : null}

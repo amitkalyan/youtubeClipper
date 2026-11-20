@@ -34,7 +34,7 @@ ollama pull qwen2.5:3b
 
 `ollama pull` can be any model you want. After it is installed, choose it under Settings. The line above is a small model that fits this 8 GB machine.
 
-If Ollama is stopped, the transcript stays, and the project shows the error. Speech under 20 seconds is joined with other speech already in that transcript, and a pause longer than 2 seconds is left out. A transcript with under 20 seconds of speech in total produces no shorts and does not load the model.
+If Ollama is stopped, shorts are still cut by joining speech from the transcript. A pause longer than 2 seconds is left out. Titles and the thumbnail headline still wait until Ollama is running. A transcript with under 20 seconds of speech in total produces no shorts.
 
 ## Phase 3
 

@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.errors import OllamaError
+from app.errors import CancelledError, OllamaError
 from app.services.clip_validation_service import has_short_window, validate_candidates
 from app.services.highlight_service import chunk_lines, find_clips
 from app.services.ollama_service import parse_clip_response
@@ -157,6 +157,52 @@ def test_empty_model_response_joins_neighboring_sentences():
     assert "Line 3 was spoken." in clips[0]["transcript"]
 
 
+def test_ollama_off_creates_shorts_without_calling_the_model(monkeypatch):
+    def chat(*args, **kwargs):
+        raise AssertionError("Ollama should not be called")
+
+    monkeypatch.setattr("app.services.ollama_service.installed_models", lambda: None)
+    monkeypatch.setattr("app.services.ollama_service.chat", chat)
+    monkeypatch.setattr("app.services.ollama_service.unload", lambda: None)
+    messages: list[str] = []
+    clips = find_clips(
+        {"sentences": spoken_lines()},
+        on_progress=lambda ratio, message: messages.append(message),
+        should_cancel=lambda: False,
+    )
+    assert len(clips) == 1
+    assert 20 <= clips[0]["duration"] <= 60
+    assert clips[0]["transcript"].startswith("Line 0 was spoken.")
+    assert any(message.startswith("Ollama is off.") for message in messages)
+
+
+def test_ollama_error_still_creates_shorts():
+    def chat(prompt: str, *, should_cancel, keep_alive):
+        raise OllamaError("Cannot reach Ollama.")
+
+    clips = find_clips(
+        {"sentences": spoken_lines()},
+        on_progress=lambda ratio, message: None,
+        should_cancel=lambda: False,
+        chat=chat,
+    )
+    assert len(clips) == 1
+    assert 20 <= clips[0]["duration"] <= 60
+
+
+def test_cancel_during_scoring_is_not_replaced_with_shorts():
+    def chat(prompt: str, *, should_cancel, keep_alive):
+        raise CancelledError("Cancelled.")
+
+    with pytest.raises(CancelledError):
+        find_clips(
+            {"sentences": spoken_lines()},
+            on_progress=lambda ratio, message: None,
+            should_cancel=lambda: False,
+            chat=chat,
+        )
+
+
 def test_short_transcript_does_not_call_the_model():
     called = False
 
@@ -208,6 +254,7 @@ def test_highlight_job_keeps_only_validated_clips(client, tone_video, monkeypatc
         return json.dumps({"clips": [raw_clip()]})
 
     monkeypatch.setattr("app.services.transcription_service.transcribe_file", fake_transcribe)
+    monkeypatch.setattr("app.services.ollama_service.installed_models", lambda: ["llama3.2:latest"])
     monkeypatch.setattr("app.services.ollama_service.chat", fake_chat)
     monkeypatch.setattr("app.services.ollama_service.unload", lambda: None)
 
